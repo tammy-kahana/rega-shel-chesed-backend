@@ -1,0 +1,18 @@
+# תלויות - נוצרות מחדש עם npm install
+node_modules/
+
+# קוד שנבנה - נוצר מחדש עם npm run build
+dist/
+
+# סודות - לעולם לא להעלות!
+.env
+.env.*
+!.env.example
+
+# קבצים זמניים
+*.log
+coverage/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
