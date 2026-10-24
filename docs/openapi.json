@@ -1,0 +1,2124 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "רגע של חסד - API",
+    "version": "1.0.0",
+    "description": "שרת לניהול משימות התנדבות בקהילה.\n\n**איך בודקים כאן נקודות קצה מוגנות:**\n1. פותחים את `POST /api/auth/login`, לוחצים **Try it out**, מזינים טלפון וסיסמה ולוחצים **Execute**.\n2. מעתיקים את הערך של `token` מהתשובה.\n3. לוחצים על הכפתור **Authorize** למעלה, מדביקים את ה-Token (בלי המילה Bearer) ולוחצים **Authorize**.\n4. מעכשיו כל קריאה תישלח עם ה-Token.\n\nבלי Token מתקבלת שגיאה 401. פעולה שאינה מותרת לתפקיד מחזירה 403.\n\nכל הודעות השגיאה בעברית, במבנה `{ \"message\": \"...\", \"details\": [...] }`."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "השרת הנוכחי"
+    }
+  ],
+  "tags": [
+    {
+      "name": "מערכת",
+      "description": "בדיקת תקינות ורשימות בחירה"
+    },
+    {
+      "name": "התחברות",
+      "description": "הרשמה, התחברות ופרטי המשתמש המחובר"
+    },
+    {
+      "name": "משימות",
+      "description": "רשימה, פרטים, הוספה, עריכה וסימון ביצוע"
+    },
+    {
+      "name": "השתתפות במשימה",
+      "description": "הצטרפות, ביטול הצטרפות ודיווח ביצוע"
+    },
+    {
+      "name": "ניהול מתנדבים",
+      "description": "לרכזים בלבד: אישור, דחייה וקידום לרכז/ת"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "ה-Token שהתקבל בהתחברות. מדביקים אותו בלי המילה Bearer."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "הודעת שגיאה בעברית"
+          },
+          "details": {
+            "type": "array",
+            "description": "פירוט לפי שדה (בשגיאות ולידציה)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Option": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "COORDINATOR",
+              "VOLUNTEER"
+            ]
+          },
+          "roleLabel": {
+            "type": "string",
+            "description": "שם התפקיד בעברית"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "statusLabel": {
+            "type": "string",
+            "description": "שם הסטטוס בעברית"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "example": {
+          "id": 7,
+          "fullName": "יוסף לוי",
+          "phone": "0527000007",
+          "role": "VOLUNTEER",
+          "roleLabel": "מתנדב/ת",
+          "status": "APPROVED",
+          "statusLabel": "מאושר",
+          "createdAt": "2026-09-01T10:00:00.000Z"
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "JWT לשליחה בכותרת Authorization"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "Volunteer": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/User"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "activeSignupsCount": {
+                "type": "integer",
+                "description": "בכמה משימות המתנדב פעיל כרגע"
+              }
+            }
+          }
+        ]
+      },
+      "TaskInput": {
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "type",
+          "area",
+          "date",
+          "time",
+          "volunteersNeeded"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80,
+            "description": "כותרת"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 1000,
+            "description": "תיאור"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ESCORT_PATIENT",
+              "FOOD_BASKETS",
+              "ELDERLY_HELP",
+              "TRANSPORT",
+              "OTHER"
+            ],
+            "description": "סוג משימה: ESCORT_PATIENT=ליווי חולה, FOOD_BASKETS=חלוקת סלי מזון, ELDERLY_HELP=עזרה לקשיש, TRANSPORT=הסעה, OTHER=אחר"
+          },
+          "area": {
+            "type": "string",
+            "enum": [
+              "BNEI_BRAK",
+              "JERUSALEM",
+              "BEIT_SHEMESH",
+              "ELAD",
+              "MODIIN_ILLIT",
+              "BEITAR_ILLIT"
+            ],
+            "description": "אזור: BNEI_BRAK=בני ברק, JERUSALEM=ירושלים, BEIT_SHEMESH=בית שמש, ELAD=אלעד, MODIIN_ILLIT=מודיעין עילית, BEITAR_ILLIT=ביתר עילית"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "YYYY-MM-DD. ביצירה: היום או בעתיד"
+          },
+          "time": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "HH:mm"
+          },
+          "volunteersNeeded": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "כמות מתנדבים נדרשת. בעריכה: לא פחות ממספר המצטרפים"
+          },
+          "privateDetails": {
+            "type": "string",
+            "maxLength": 500,
+            "nullable": true,
+            "description": "פרטים למתנדבים (כתובת ואיש קשר). לא חובה"
+          }
+        },
+        "example": {
+          "title": "הסעה לבדיקות בבית החולים",
+          "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+          "type": "TRANSPORT",
+          "area": "BNEI_BRAK",
+          "date": "2026-11-03",
+          "time": "09:30",
+          "volunteersNeeded": 1,
+          "privateDetails": "רחוב הדוגמה 12, קומה 2. איש קשר: הבן, 0550000123"
+        }
+      },
+      "TaskSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ESCORT_PATIENT",
+              "FOOD_BASKETS",
+              "ELDERLY_HELP",
+              "TRANSPORT",
+              "OTHER"
+            ]
+          },
+          "typeLabel": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string",
+            "enum": [
+              "BNEI_BRAK",
+              "JERUSALEM",
+              "BEIT_SHEMESH",
+              "ELAD",
+              "MODIIN_ILLIT",
+              "BEITAR_ILLIT"
+            ]
+          },
+          "areaLabel": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "time": {
+            "type": "string"
+          },
+          "volunteersNeeded": {
+            "type": "integer"
+          },
+          "joinedCount": {
+            "type": "integer",
+            "description": "כמה מתנדבים פעילים במשימה"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "TAKEN",
+              "DONE"
+            ]
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "fullName": {
+                "type": "string"
+              }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mySignup": {
+            "type": "object",
+            "nullable": true,
+            "description": "ההשתתפות של המשתמש המחובר, או null אם לא הצטרף",
+            "properties": {
+              "reportedDone": {
+                "type": "boolean"
+              }
+            }
+          },
+          "actions": {
+            "type": "object",
+            "description": "אילו פעולות המשתמש המחובר יכול לבצע במשימה (להצגת כפתורים)",
+            "properties": {
+              "canEdit": {
+                "type": "boolean"
+              },
+              "canComplete": {
+                "type": "boolean"
+              },
+              "canJoin": {
+                "type": "boolean"
+              },
+              "canCancel": {
+                "type": "boolean"
+              },
+              "canReportDone": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "example": {
+          "id": 12,
+          "title": "הסעה לבדיקות בבית החולים",
+          "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+          "type": "TRANSPORT",
+          "typeLabel": "הסעה",
+          "area": "BNEI_BRAK",
+          "areaLabel": "בני ברק",
+          "date": "2026-11-03",
+          "time": "09:30",
+          "volunteersNeeded": 1,
+          "joinedCount": 0,
+          "status": "OPEN",
+          "statusLabel": "פתוחה",
+          "createdBy": {
+            "id": 1,
+            "fullName": "מרים כהן"
+          },
+          "createdAt": "2026-10-20T08:00:00.000Z",
+          "updatedAt": "2026-10-20T08:00:00.000Z",
+          "mySignup": null,
+          "actions": {
+            "canEdit": false,
+            "canComplete": false,
+            "canJoin": true,
+            "canCancel": false,
+            "canReportDone": false
+          }
+        }
+      },
+      "TaskSignup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "volunteer": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "fullName": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "CANCELLED"
+            ]
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "reportedDone": {
+            "type": "boolean"
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TaskDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TaskSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "privateDetails": {
+                "type": "string",
+                "nullable": true,
+                "description": "מופיע רק לרכזים ולמי שפעיל במשימה"
+              },
+              "signups": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TaskSignup"
+                },
+                "description": "מופיע לרכזים בלבד, כולל מתנדבים שביטלו"
+              }
+            }
+          }
+        ],
+        "example": {
+          "id": 12,
+          "title": "הסעה לבדיקות בבית החולים",
+          "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+          "type": "TRANSPORT",
+          "typeLabel": "הסעה",
+          "area": "BNEI_BRAK",
+          "areaLabel": "בני ברק",
+          "date": "2026-11-03",
+          "time": "09:30",
+          "volunteersNeeded": 1,
+          "joinedCount": 1,
+          "status": "TAKEN",
+          "statusLabel": "נתפסה",
+          "createdBy": {
+            "id": 1,
+            "fullName": "מרים כהן"
+          },
+          "createdAt": "2026-10-20T08:00:00.000Z",
+          "updatedAt": "2026-10-20T08:00:00.000Z",
+          "mySignup": {
+            "reportedDone": false
+          },
+          "actions": {
+            "canEdit": false,
+            "canComplete": false,
+            "canJoin": false,
+            "canCancel": true,
+            "canReportDone": true
+          },
+          "privateDetails": "רחוב הדוגמה 12, קומה 2. איש קשר: הבן, 0550000123"
+        }
+      },
+      "Signup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "taskId": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "CANCELLED"
+            ]
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "reportedDone": {
+            "type": "boolean"
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "מערכת"
+        ],
+        "summary": "בדיקה שהשרת ומסד הנתונים פעילים",
+        "responses": {
+          "200": {
+            "description": "הכול תקין",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "example": {
+                  "status": "ok",
+                  "database": "ok",
+                  "time": "2026-10-25T10:00:00.000Z"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "אין חיבור למסד הנתונים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "example": {
+                  "status": "error",
+                  "database": "unreachable",
+                  "message": "אין חיבור למסד הנתונים"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "tags": [
+          "מערכת"
+        ],
+        "summary": "רשימות הבחירה עם השמות בעברית",
+        "description": "לשימוש בטפסים ובסינון: סוגי משימות, אזורים, סטטוסים ואפשרויות מיון.",
+        "responses": {
+          "200": {
+            "description": "הרשימות",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskTypes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    },
+                    "areas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    },
+                    "taskStatuses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    },
+                    "userStatuses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    },
+                    "signupStatuses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    },
+                    "sortOptions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Option"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "taskTypes": [
+                    {
+                      "value": "TRANSPORT",
+                      "label": "הסעה"
+                    }
+                  ],
+                  "areas": [
+                    {
+                      "value": "BNEI_BRAK",
+                      "label": "בני ברק"
+                    }
+                  ],
+                  "taskStatuses": [
+                    {
+                      "value": "OPEN",
+                      "label": "פתוחה"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "הרשמת מתנדב חדש",
+        "description": "המתנדב נוצר בסטטוס \"ממתין לאישור\" (PENDING). עד שרכז/ת מאשר/ת, הוא יכול לראות משימות פתוחות אבל לא להצטרף.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "fullName",
+                  "phone",
+                  "password"
+                ],
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "10 ספרות שמתחילות ב-05"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "לפחות 8 תווים, אות באנגלית וספרה"
+                  }
+                }
+              },
+              "example": {
+                "fullName": "אברהם ישראלי",
+                "phone": "0529999999",
+                "password": "Hesed2026"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "נרשם בהצלחה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                },
+                "example": {
+                  "token": "eyJhbGciOi...",
+                  "user": {
+                    "id": 7,
+                    "fullName": "יוסף לוי",
+                    "phone": "0527000007",
+                    "role": "VOLUNTEER",
+                    "roleLabel": "מתנדב/ת",
+                    "status": "PENDING",
+                    "statusLabel": "ממתין לאישור",
+                    "createdAt": "2026-09-01T10:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "הטלפון כבר רשום",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "מספר הטלפון כבר רשום במערכת"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "התחברות",
+        "description": "מחזירה JWT. מעתיקים את ה-token ולוחצים Authorize.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone",
+                  "password"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "phone": "0501000001",
+                "password": "הסיסמה שהוגדרה ב-SEED_DEMO_PASSWORD"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "התחברות הצליחה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                },
+                "example": {
+                  "token": "eyJhbGciOi...",
+                  "user": {
+                    "id": 7,
+                    "fullName": "יוסף לוי",
+                    "phone": "0527000007",
+                    "role": "VOLUNTEER",
+                    "roleLabel": "מתנדב/ת",
+                    "status": "APPROVED",
+                    "statusLabel": "מאושר",
+                    "createdAt": "2026-09-01T10:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "טלפון או סיסמה שגויים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "מספר טלפון או סיסמה שגויים"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "פרטי המשתמש המחובר",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשתמש",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                },
+                "example": {
+                  "user": {
+                    "id": 7,
+                    "fullName": "יוסף לוי",
+                    "phone": "0527000007",
+                    "role": "VOLUNTEER",
+                    "roleLabel": "מתנדב/ת",
+                    "status": "APPROVED",
+                    "statusLabel": "מאושר",
+                    "createdAt": "2026-09-01T10:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "tags": [
+          "משימות"
+        ],
+        "summary": "רשימת משימות, עם חיפוש, סינון ומיון",
+        "description": "מה כל אחד רואה:\n- רכז/ת: כל המשימות.\n- מתנדב מאושר: משימות פתוחות + משימות שהוא פעיל בהן.\n- מתנדב ממתין או נדחה: משימות פתוחות בלבד.\n\nהשדה privateDetails לא מופיע ברשימה.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "description": "חיפוש חופשי בכותרת ובתיאור",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "description": "סינון לפי אזור",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BNEI_BRAK",
+                "JERUSALEM",
+                "BEIT_SHEMESH",
+                "ELAD",
+                "MODIIN_ILLIT",
+                "BEITAR_ILLIT"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "סינון לפי סוג",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ESCORT_PATIENT",
+                "FOOD_BASKETS",
+                "ELDERLY_HELP",
+                "TRANSPORT",
+                "OTHER"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "סינון לפי סטטוס",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "TAKEN",
+                "DONE"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "מיון לפי תאריך",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "date_asc",
+                "date_desc"
+              ],
+              "default": "date_asc"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "description": "true = רק משימות שהצטרפתי אליהן",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "מערך משימות",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskSummary"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 12,
+                    "title": "הסעה לבדיקות בבית החולים",
+                    "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+                    "type": "TRANSPORT",
+                    "typeLabel": "הסעה",
+                    "area": "BNEI_BRAK",
+                    "areaLabel": "בני ברק",
+                    "date": "2026-11-03",
+                    "time": "09:30",
+                    "volunteersNeeded": 1,
+                    "joinedCount": 0,
+                    "status": "OPEN",
+                    "statusLabel": "פתוחה",
+                    "createdBy": {
+                      "id": 1,
+                      "fullName": "מרים כהן"
+                    },
+                    "createdAt": "2026-10-20T08:00:00.000Z",
+                    "updatedAt": "2026-10-20T08:00:00.000Z",
+                    "mySignup": null,
+                    "actions": {
+                      "canEdit": false,
+                      "canComplete": false,
+                      "canJoin": true,
+                      "canCancel": false,
+                      "canReportDone": false
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "משימות"
+        ],
+        "summary": "יצירת משימה (רכזים)",
+        "description": "המשימה נוצרת בסטטוס \"פתוחה\". התאריך חייב להיות היום או בעתיד.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskInput"
+              },
+              "example": {
+                "title": "הסעה לבדיקות בבית החולים",
+                "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+                "type": "TRANSPORT",
+                "area": "BNEI_BRAK",
+                "date": "2026-11-03",
+                "time": "09:30",
+                "volunteersNeeded": 1,
+                "privateDetails": "רחוב הדוגמה 12, קומה 2. איש קשר: הבן, 0550000123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "המשימה נוצרה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה: הפעולה לרכזים בלבד",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "פעולה זו מותרת לרכזים בלבד"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "tags": [
+          "משימות"
+        ],
+        "summary": "פרטי משימה",
+        "description": "privateDetails מופיע רק לרכזים ולמי שפעיל במשימה. signups (רשימת המתנדבים) מופיע לרכזים בלבד.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשימה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetail"
+                },
+                "example": {
+                  "id": 12,
+                  "title": "הסעה לבדיקות בבית החולים",
+                  "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+                  "type": "TRANSPORT",
+                  "typeLabel": "הסעה",
+                  "area": "BNEI_BRAK",
+                  "areaLabel": "בני ברק",
+                  "date": "2026-11-03",
+                  "time": "09:30",
+                  "volunteersNeeded": 1,
+                  "joinedCount": 1,
+                  "status": "TAKEN",
+                  "statusLabel": "נתפסה",
+                  "createdBy": {
+                    "id": 1,
+                    "fullName": "מרים כהן"
+                  },
+                  "createdAt": "2026-10-20T08:00:00.000Z",
+                  "updatedAt": "2026-10-20T08:00:00.000Z",
+                  "mySignup": {
+                    "reportedDone": false
+                  },
+                  "actions": {
+                    "canEdit": false,
+                    "canComplete": false,
+                    "canJoin": false,
+                    "canCancel": true,
+                    "canReportDone": true
+                  },
+                  "privateDetails": "רחוב הדוגמה 12, קומה 2. איש קשר: הבן, 0550000123"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לצפות במשימה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "אין לך הרשאה לצפות במשימה זו"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשימה לא נמצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה לא נמצאה"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "משימות"
+        ],
+        "summary": "עריכת משימה (הרכז/ת שיצר/ה אותה)",
+        "description": "שולחים את כל שדות הטופס. הסטטוס מחושב מחדש לפי מספר המצטרפים.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskInput"
+              },
+              "example": {
+                "title": "הסעה לבדיקות בבית החולים",
+                "description": "הסעה של קשיש מבני ברק לבדיקות שגרתיות וחזרה הביתה. משך משוער: שלוש שעות.",
+                "type": "TRANSPORT",
+                "area": "BNEI_BRAK",
+                "date": "2026-11-03",
+                "time": "09:30",
+                "volunteersNeeded": 1,
+                "privateDetails": "רחוב הדוגמה 12, קומה 2. איש קשר: הבן, 0550000123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "המשימה המעודכנת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "לא הרכז/ת שיצר/ה את המשימה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "ניתן לשנות רק משימות שיצרת"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשימה לא נמצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה לא נמצאה"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "המשימה כבר בוצעה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה כבר סומנה כבוצעה, ולא ניתן לשנות אותה"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/complete": {
+      "patch": {
+        "tags": [
+          "משימות"
+        ],
+        "summary": "סימון משימה כ\"בוצעה\" (הרכז/ת שיצר/ה אותה)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשימה, בסטטוס DONE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "לא הרכז/ת שיצר/ה את המשימה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "ניתן לשנות רק משימות שיצרת"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשימה לא נמצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה לא נמצאה"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "המשימה כבר בוצעה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה כבר סומנה כבוצעה, ולא ניתן לשנות אותה"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/join": {
+      "post": {
+        "tags": [
+          "השתתפות במשימה"
+        ],
+        "summary": "הצטרפות למשימה (מתנדב מאושר או רכז/ת)",
+        "description": "רק למשימה פתוחה. כשמספר המצטרפים מגיע לכמות הנדרשת, המשימה הופכת ל\"נתפסה\".",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשימה עם הסטטוס המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "החשבון לא מאושר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "החשבון שלך ממתין לאישור רכז/ת, ולכן עדיין אי אפשר להצטרף למשימות"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשימה לא נמצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה לא נמצאה"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "כבר הצטרפת / המשימה מלאה / בוצעה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה כבר מלאה - הצטרף המספר הנדרש של מתנדבים"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/cancel": {
+      "post": {
+        "tags": [
+          "השתתפות במשימה"
+        ],
+        "summary": "ביטול הצטרפות",
+        "description": "אפשרי כל עוד המשימה לא בוצעה. משימה \"נתפסה\" חוזרת ל\"פתוחה\". הביטול נשמר ומוצג לרכז/ת.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשימה עם הסטטוס המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "החשבון לא מאושר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "החשבון שלך אינו מאושר להשתתפות במשימות"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשימה לא נמצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה לא נמצאה"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "לא הצטרפת / המשימה בוצעה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "לא הצטרפת למשימה זו"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/report-done": {
+      "post": {
+        "tags": [
+          "השתתפות במשימה"
+        ],
+        "summary": "דיווח \"ביצעתי\"",
+        "description": "הדיווח מוצג לרכז/ת ליד שם המתנדב. הוא לא משנה את סטטוס המשימה.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ההצטרפות המעודכנת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Signup"
+                },
+                "example": {
+                  "id": 30,
+                  "taskId": 12,
+                  "status": "ACTIVE",
+                  "statusLabel": "פעיל",
+                  "reportedDone": true,
+                  "joinedAt": "2026-10-21T09:00:00.000Z",
+                  "cancelledAt": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "החשבון לא מאושר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "החשבון שלך אינו מאושר להשתתפות במשימות"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשימה לא נמצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המשימה לא נמצאה"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "לא הצטרפת / המשימה בוצעה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "לא הצטרפת למשימה זו"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/volunteers": {
+      "get": {
+        "tags": [
+          "ניהול מתנדבים"
+        ],
+        "summary": "רשימת מתנדבים (רכזים)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "סינון לפי סטטוס",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "מערך מתנדבים (בלי סיסמאות)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Volunteer"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 7,
+                    "fullName": "יוסף לוי",
+                    "phone": "0527000007",
+                    "role": "VOLUNTEER",
+                    "roleLabel": "מתנדב/ת",
+                    "status": "APPROVED",
+                    "statusLabel": "מאושר",
+                    "createdAt": "2026-09-01T10:00:00.000Z",
+                    "activeSignupsCount": 2
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה: הפעולה לרכזים בלבד",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "פעולה זו מותרת לרכזים בלבד"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/volunteers/{id}/status": {
+      "patch": {
+        "tags": [
+          "ניהול מתנדבים"
+        ],
+        "summary": "אישור או דחייה של מתנדב (רכזים)",
+        "description": "REJECTED משמש גם לחסימה. הצטרפויות קיימות נשארות, ורק הצטרפויות חדשות נחסמות.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVED",
+                      "REJECTED"
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "status": "APPROVED"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "המתנדב המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "example": {
+                  "id": 7,
+                  "fullName": "יוסף לוי",
+                  "phone": "0527000007",
+                  "role": "VOLUNTEER",
+                  "roleLabel": "מתנדב/ת",
+                  "status": "APPROVED",
+                  "statusLabel": "מאושר",
+                  "createdAt": "2026-09-01T10:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "הנתונים שנשלחו אינם תקינים",
+                  "details": [
+                    {
+                      "field": "title",
+                      "message": "הכותרת חייבת להכיל לפחות 3 תווים"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה: הפעולה לרכזים בלבד",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "פעולה זו מותרת לרכזים בלבד"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המתנדב לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המתנדב לא נמצא"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/volunteers/{id}/promote": {
+      "patch": {
+        "tags": [
+          "ניהול מתנדבים"
+        ],
+        "summary": "קידום מתנדב מאושר לרכז/ת (רכזים)",
+        "description": "הקידום חד-כיווני. ההצטרפויות של המתנדב נשארות.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשתמש המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "example": {
+                  "id": 7,
+                  "fullName": "יוסף לוי",
+                  "phone": "0527000007",
+                  "role": "COORDINATOR",
+                  "roleLabel": "רכז/ת התנדבויות",
+                  "status": "APPROVED",
+                  "statusLabel": "מאושר",
+                  "createdAt": "2026-09-01T10:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר: Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "נדרשת התחברות. יש לשלוח Token בכותרת Authorization"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה: הפעולה לרכזים בלבד",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "פעולה זו מותרת לרכזים בלבד"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המתנדב לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "המתנדב לא נמצא"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "המתנדב לא מאושר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "ניתן לקדם לרכז/ת רק מתנדב מאושר"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

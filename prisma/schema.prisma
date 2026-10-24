@@ -1,0 +1,115 @@
+// סכמת מסד הנתונים של "רגע של חסד"
+// שלוש טבלאות: users (משתמשים), tasks (משימות), signups (הצטרפויות)
+
+generator client {
+  provider   = "prisma-client-js"
+  // מנוע "client" עובד בלי קובץ מנוע נפרד, דרך החיבור הרגיל של pg (ראו src/db/prisma.ts)
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// תפקיד המשתמש
+enum Role {
+  COORDINATOR // רכז/ת התנדבויות
+  VOLUNTEER // מתנדב
+}
+
+// סטטוס אישור של מתנדב
+enum UserStatus {
+  PENDING // ממתין לאישור
+  APPROVED // מאושר
+  REJECTED // נדחה / חסום
+}
+
+// סוג משימה
+enum TaskType {
+  ESCORT_PATIENT // ליווי חולה
+  FOOD_BASKETS // חלוקת סלי מזון
+  ELDERLY_HELP // עזרה לקשיש
+  TRANSPORT // הסעה
+  OTHER // אחר
+}
+
+// אזור (עיר)
+enum Area {
+  BNEI_BRAK // בני ברק
+  JERUSALEM // ירושלים
+  BEIT_SHEMESH // בית שמש
+  ELAD // אלעד
+  MODIIN_ILLIT // מודיעין עילית
+  BEITAR_ILLIT // ביתר עילית
+}
+
+// סטטוס משימה - מתעדכן אוטומטית בשרת
+enum TaskStatus {
+  OPEN // פתוחה
+  TAKEN // נתפסה
+  DONE // בוצעה
+}
+
+// סטטוס הצטרפות
+enum SignupStatus {
+  ACTIVE // פעיל
+  CANCELLED // בוטל
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  fullName     String
+  phone        String     @unique
+  passwordHash String
+  role         Role       @default(VOLUNTEER)
+  status       UserStatus @default(PENDING)
+  createdAt    DateTime   @default(now())
+
+  createdTasks Task[]   @relation("TaskCreator")
+  signups      Signup[]
+
+  @@map("users")
+}
+
+model Task {
+  id               Int        @id @default(autoincrement())
+  title            String
+  description      String
+  type             TaskType
+  area             Area
+  date             DateTime   @db.Date
+  time             String // בפורמט HH:mm
+  volunteersNeeded Int
+  privateDetails   String? // פרטים למתנדבים - גלוי רק למורשים
+  status           TaskStatus @default(OPEN)
+  createdById      Int
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  createdBy User     @relation("TaskCreator", fields: [createdById], references: [id])
+  signups   Signup[]
+
+  @@index([area])
+  @@index([type])
+  @@index([status])
+  @@index([date])
+  @@map("tasks")
+}
+
+model Signup {
+  id           Int          @id @default(autoincrement())
+  taskId       Int
+  volunteerId  Int
+  status       SignupStatus @default(ACTIVE)
+  reportedDone Boolean      @default(false)
+  joinedAt     DateTime     @default(now())
+  cancelledAt  DateTime?
+
+  task      Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  volunteer User @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  // אותו משתמש לא יכול להופיע פעמיים באותה משימה
+  @@unique([taskId, volunteerId])
+  @@map("signups")
+}

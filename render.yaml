@@ -1,0 +1,28 @@
+# הגדרות לפריסה ב-Render (Blueprint).
+# מסד הנתונים נמצא אצל ספק נפרד (למשל Neon), ולכן מגדירים כאן רק את השרת.
+# ערכים עם sync: false - Render יבקש להזין אותם ידנית בזמן היצירה.
+services:
+  - type: web
+    name: rega-shel-chesed-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    # מריץ Migrations, ממלא נתוני הדגמה (רק אם מסד הנתונים ריק), ומפעיל את השרת
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: SEED_DEMO_PASSWORD
+        sync: false
