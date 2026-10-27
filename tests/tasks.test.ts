@@ -230,6 +230,22 @@ describe('הצטרפות, ביטול ודיווח', () => {
     expect(forOwner.body.signups[0].reportedDone).toBe(true);
   });
 
+  it('אחרי דיווח ביצוע אי אפשר לבטל את ההצטרפות - 409, והכפתור לא מוצג', async () => {
+    const owner = await coordinator();
+    const v = await volunteer();
+    const task = await createTaskViaApi(owner.auth, { volunteersNeeded: 2 });
+    await api().post(`/api/tasks/${task.id}/join`).set(v.auth).expect(200);
+    await api().post(`/api/tasks/${task.id}/report-done`).set(v.auth).expect(200);
+
+    const forVolunteer = await api().get(`/api/tasks/${task.id}`).set(v.auth);
+    expect(forVolunteer.body.actions.canCancel).toBe(false);
+    expect(forVolunteer.body.actions.canReportDone).toBe(false);
+
+    const res = await api().post(`/api/tasks/${task.id}/cancel`).set(v.auth);
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe('כבר דיווחת שביצעת את המשימה, ולכן אי אפשר לבטל את ההצטרפות');
+  });
+
   it('דיווח בלי הצטרפות - 409', async () => {
     const owner = await coordinator();
     const v = await volunteer();
