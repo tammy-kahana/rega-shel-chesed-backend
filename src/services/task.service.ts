@@ -58,7 +58,7 @@ function toTaskSummary(task: TaskWithSummary, user: PublicUser) {
       canEdit: isCreator && notDone,
       canComplete: isCreator && notDone,
       canJoin: canParticipate(user) && task.status === 'OPEN' && !mySignup,
-      canCancel: canParticipate(user) && Boolean(mySignup) && notDone,
+      canCancel: canParticipate(user) && Boolean(mySignup) && !mySignup?.reportedDone && notDone,
       canReportDone: canParticipate(user) && Boolean(mySignup) && !mySignup?.reportedDone && notDone,
     },
   };
@@ -276,6 +276,9 @@ async function findActiveSignupForChange(tx: Tx, id: number, user: PublicUser) {
 export async function cancelSignup(id: number, user: PublicUser) {
   await prisma.$transaction(async (tx) => {
     const signup = await findActiveSignupForChange(tx, id, user);
+    if (signup.reportedDone) {
+      throw AppError.conflict('כבר דיווחת שביצעת את המשימה, ולכן אי אפשר לבטל את ההצטרפות');
+    }
     // הביטול לא נמחק - הרכז/ת יראה/תראה שהמתנדב ביטל
     await tx.signup.update({
       where: { id: signup.id },
